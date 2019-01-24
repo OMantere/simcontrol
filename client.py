@@ -16,10 +16,11 @@ class Simulator(object):
     def get_gates(self, num):
         self.gates = []
         self.num_gates = num
-        for i in range(gate_n):
+        for i in range(num):
             self.gates.append(Gate.from_api(self.client, i))
 
     def track_position_matrix(self):
-        p = np.zeros(self.num_gates + 1, 3) # Include the start as end for the track
+        p = np.zeros((self.num_gates + 1, 3)) # Include the start as end for the track
         for i in range(self.num_gates + 1):
-            p[i, :] = self.gates[i % num_gates].pos
+            p[i, :] = self.gates[i % self.num_gates].pos
+        return p

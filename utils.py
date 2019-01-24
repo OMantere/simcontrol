@@ -24,11 +24,18 @@ def unreal_tf(x):
 
 
 class Quaternion(np.ndarray):
+    def __new__(self, values):
+        return np.array(values)
+
+    @classmethod
+    def zero(cls):
+        return np.asarray([0,0,0,0]).view(cls)
+
     @classmethod
     def from_airsim(cls, q):
         """To be initialized with an AirSim quaternion"""
-        obj = cls([q.x_val, q.y_val, q.z_val, q.w_val])
-        obj.q = q
+        obj = np.asarray([q.x_val, q.y_val, q.z_val, q.w_val]).view(cls)
+        setattr(obj, 'q', q)
         return obj
 
     def yaw(self):
@@ -39,12 +46,19 @@ class Quaternion(np.ndarray):
 
 
 class Position(np.ndarray):
+    def __new__(self, values):
+        return np.array(values)
+
+    @classmethod
+    def zero(cls):
+        return np.asarray([0,0,0]).view(cls)
+
     @classmethod
     def from_airsim(cls, pos):
         """To be initialized with an AirSim position. We should keep internal 
         representation in AirSim space"""
-        obj = cls([pos.x_val, pos.y_val, pos.z_val])
-        obj.pos = pos
+        obj = np.asarray([pos.x_val, pos.y_val, pos.z_val]).view(cls)
+        setattr(obj, 'pos', pos)
         return obj
 
     def unreal_position(self):
@@ -52,7 +66,7 @@ class Position(np.ndarray):
         return unreal_tf(self.pos)
 
 
-def Gate(object):
+class Gate(object):
 
     def __init__(self, pos, q):
         self.pos = pos
@@ -64,14 +78,16 @@ def Gate(object):
         pose = client.simGetObjectPose(gate_name)
         if np.isnan(pose.position.x_val):
             print(gate_name, "was nan")
-            return cls(Position(), Quaternion())
+            return cls(Position.zero(), Quaternion.zero())
         else:
             pos = pose.position
-            pos.x_val -= np.cos(q_yaw(pose.orientation)) * x_corr
+            q = Quaternion.from_airsim(pose.orientation)
+            pos.x_val -= np.cos(q.yaw()) * x_corr
             pos.z_val -= z_corr
-            obj = cls(Position.from_airsim(pos), Quaternion.from_airsim(pose.orientation))
+            obj = cls(Position.from_airsim(pos), q)
             return obj
 
     @classmethod
-    def from_unreal_position(cls, x, y, z): # Because we really dont care about gate orientation
-        return cls(Position([x, y, z]), Quaternion())
+    def from_unreal_position(cls, x, y, z, yaw=90.0): # Because we really dont care about gate orientation
+        x_offset = np.cos(yaw/180*np.pi) * x_corr * scale
+        return cls(Position(airsim_tf([x - x_offset, y, z + z_corr * scale])), Quaternion.zero())
