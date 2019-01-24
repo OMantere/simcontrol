@@ -35,13 +35,12 @@ class Quaternion(np.ndarray):
     def from_airsim(cls, q):
         """To be initialized with an AirSim quaternion"""
         obj = np.asarray([q.x_val, q.y_val, q.z_val, q.w_val]).view(cls)
-        setattr(obj, 'q', q)
         return obj
 
     def yaw(self):
         """Rotation around the z-axis in radians"""
-        siny_cosp = 2.0 * (self.q.w_val * self.q.z_val + self.q.x_val * self.q.y_val)
-        cosy_cosp = 1.0 - 2.0 * (self.q.y_val * self.q.y_val + self.q.z_val * self.q.z_val)
+        siny_cosp = 2.0 * (self[3] * self[2] + self[0] * self[1])
+        cosy_cosp = 1.0 - 2.0 * (self[1] * self[1] + self[2] * self[2])
         return np.arctan2(siny_cosp, cosy_cosp)
 
 
@@ -58,12 +57,11 @@ class Position(np.ndarray):
         """To be initialized with an AirSim position. We should keep internal 
         representation in AirSim space"""
         obj = np.asarray([pos.x_val, pos.y_val, pos.z_val]).view(cls)
-        setattr(obj, 'pos', pos)
         return obj
 
     def unreal_position(self):
         """Position vector in Unreal space"""
-        return unreal_tf(self.pos)
+        return unreal_tf(self)
 
 
 class Gate(object):
