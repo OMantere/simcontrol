@@ -1,0 +1,9 @@
+<library path="lib/libimage_publisher_nodelet">
+  <class name="simcontrol/ImagePublisherNodelet"
+    type="simcontrol::ImagePublisherNodelet"
+    base_class_type="nodelet::Nodelet">
+    <description>
+      Captures images from the simulator and publishes them.
+    </description>
+  </class>
+</library>

@@ -9,3 +9,10 @@ jupyter notebook
 
 Check out the example notebook
 
+
+# To install ros node
+
+First install the rovio node and dependencies from https://github.com/ethz-asl/rovio.
+
+While airsim is running, run using `roslaunch simcontrol vio.launch`.
+
