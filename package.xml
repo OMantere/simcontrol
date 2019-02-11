@@ -38,6 +38,7 @@
   <depend>rovio</depend>
   <depend>tf</depend>
   <depend>nodelet</depend>
+  <depend>flightgoggles</depend>
   <!--   Note that this is equivalent to the following: -->
   <!--   <build_depend>roscpp</build_depend> -->
   <!--   <exec_depend>roscpp</exec_depend> -->

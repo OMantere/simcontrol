@@ -6,6 +6,7 @@ from math import *
 import numpy as np
 import quaternion
 from simple_pid import PID
+from mav_msgs.msg import RateThrust
 
 class ControllerBase(object):
     def __init__(self, client, rate):
@@ -75,6 +76,16 @@ class CascadeV1(ControllerBase):
         omega_y = float(omega[1])
         omega_z = float(omega[2])
         self.client.moveByAnglerateThrottleAsync(omega_x, omega_y, omega_z, c, 1/self.rate)
+
+    def command_flightgoggles(self, c, omega):
+        msg = RateThrust()
+        msg.angular_rates.x = omega[0]
+        msg.angular_rates.y = omega[1]
+        msg.angular_rates.z = omega[2]
+        msg.thrust.x = 0
+        msg.thrust.y = 0
+        msg.thrust.z = c
+        self.pub.publish()
 
     def get_state(self):
         p, v, a, q, omega, alpha = self.state_estimate()
@@ -166,9 +177,10 @@ class CascadeV1(ControllerBase):
         omega_d[2] = -self.thetaz_pid(0)
 
         # Send command
-        c = np.linalg.norm(a_db)/max_acc # Desired thrust is norm of acceleration
+        c = np.linalg.norm(a_db)
+        self.command_flightgoggles(c, omega_d)
+        c = c/max_acc # Desired thrust is norm of acceleration
         self.command(c, omega_d)
-        
 
 
 class PerceptionNode(object):
@@ -177,6 +189,7 @@ class PerceptionNode(object):
         self.rate = 60
         self.path = np.genfromtxt('/home/omantere/git/simcontrol/spline.csv', delimiter=',')
         self.path[:,2] += 2
+        self.pub = rospy.Publisher('/uav/input/rateThrust', RateThrust, queue_size=1)
 
     def airpub(self):
         rospy.init_node('drone_perception')
