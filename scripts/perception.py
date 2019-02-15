@@ -143,7 +143,7 @@ class CascadeV1(ControllerBase):
         a_d[2] = self.vz_pid(xdot[2])
 
         # World to body transform
-        a_db = self.w2b(q_b, a_d) - g_vec
+        a_db = self.w2b(q_b, a_d - g_vec)
 
         # Find desired attitude correction using shortest arc algorithm
         q_theta = self.shortest_arc(unit_z, a_db)
