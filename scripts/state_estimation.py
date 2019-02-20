@@ -25,6 +25,9 @@ class EKF(object):
             u[0]: angular velocity x
             u[1]: angular velocity y
             u[2]: angular velocity z
+            u[3]: thrust x
+            u[4]: thrust y
+            u[5]: thrust z
         """
         assert len(initial_state.shape) == 2
         self.x = initial_state
@@ -51,14 +54,12 @@ class EKF(object):
         self.x += K.dot((z - z_hat))
         self.P_post = (self.I - K.dot(H)).dot(P_pre)
 
-        # Normalize quaternion.
-        self.x[6:10] = self.x[6:10] / np.linalg.norm(self.x[6:10], 2)
 
         return self.x, self.P_post
 
     def g(self, x, u):
         angular_velocity = u[0:3]
-        thrust = u[2]
+        thrust = u[5]
 
         x = x
         dx = np.zeros_like(x)
@@ -104,7 +105,11 @@ class EKF(object):
         J[9, 7] = -self.dt * angular_velocity[1]
         J[9, 8] = -self.dt * angular_velocity[2]
 
-        return x + dx, J
+        x += dx
+        # Normalize quaternion.
+        x[6:10] = x[6:10] / np.linalg.norm(x[6:10], 2)
+
+        return x, J
 
     def h(self, x):
         z = x[3:6]
@@ -172,7 +177,7 @@ class StateEstimatorNode(object):
             imu_msg.linear_acceleration.y,
             imu_msg.linear_acceleration.z
             ])[:, None]
-        u = np.array(self.thrust[0:3])[:, None]
+        u = np.array(self.thrust[0:6])[:, None]
         R = np.array(imu_msg.angular_velocity_covariance).reshape(3, 3)
         mean, _ = self.ekf.step(z, u, R)
         self._publish_frame(mean)
