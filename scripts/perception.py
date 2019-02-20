@@ -13,6 +13,7 @@ from simple_pid import PID
 from mav_msgs.msg import RateThrust
 from sensor_msgs.msg import Imu
 from flightgoggles.msg import IRMarkerArray, IRMarker
+from lib.graphix import camera_ray
 
 class ControllerBase(object):
     def __init__(self, rate):
@@ -96,6 +97,10 @@ class PIDCascadeV1(ControllerBase):
             self.command(9.81 * 1.2, np.array([0.0, 0.0, 0.0]))  # c > 1.1 * m * g to arm
             return
         x, xdot, xddot, q_b = estimate
+        if self.use_ir_markers:
+            ray, area = self.ir_waypoint(q_b)
+            if ray is not None:
+                x_d = ray * 5 + x
         roll, pitch, yaw = self.rpy(q_b)
         g_vec = np.array([0.0, 0.0, -9.81])
         unit_z = np.array([0.0, 0.0, 1.0])
@@ -207,6 +212,9 @@ class FlightgogglesController(PIDCascadeV1):
         self.imu_latest_xddot = np.array([0.0, 0.0, 0.0])
         self.imu_latest_omega = np.array([0.0, 0.0, 0.0])
         self.is_armed = False
+        self.gate_names = rospy.get_param("/gate_names") if rospy.has_param('/gate_names') else None
+        self.use_ir_markers = rospy.get_param("/use_ir_markers") if rospy.has_param('/use_ir_markers') else False
+        self.target_gate = 0
 
         self.max_omega = 5*np.pi
         # TODO: Extract PID configuration into a function
@@ -240,12 +248,47 @@ class FlightgogglesController(PIDCascadeV1):
         self.thetay_pid.output_limits = omegaxy_lim
         self.thetaz_pid.output_limits = omegaz_lim
         self.latest_markers = defaultdict(list)
+        self.latest_markers_time = None
+        self.latest_gate_visible_area = 0
+
+    def ir_waypoint(self, q_b):
+        center = np.float32([0, 0])
+        target_gate_name = None
+        if self.gate_names is None:
+            if len(self.latest_markers) == 0:
+                print("No gates in sight")
+                return
+            else:
+                target_gate_name = list(self.latest_markers)[0]
+                print("Going to gate: ", target_gate_name)
+        else:
+            target_gate_name = self.gate_names[self.target_gate]
+        if target_gate_name not in self.latest_markers:
+            print("Cannot see IR markers of target gate!")
+            return None, 0
+        else:
+            target_markers = [marker for _, marker in self.latest_markers[target_gate_name].items()]
+            mean_pixel = sum(target_markers) / len(target_markers)
+            gate_visible_area = 0
+            if len(target_markers) == 4: # If all are visible, compute area
+                r1 = self.latest_markers[target_gate_name]['1']
+                r2 = self.latest_markers[target_gate_name]['2']
+                r3 = self.latest_markers[target_gate_name]['3']
+                r4 = self.latest_markers[target_gate_name]['4']
+                gate_visible_area += 0.5 * np.linalg.norm(np.cross(r2 - r1, r3 - r1))
+                gate_visible_area += 0.5 * np.linalg.norm(np.cross(r2 - r4, r3 - r4))
+            self.latest_gate_visible_area = gate_visible_area
+            # Unit vector in the direction of the average of IR markers in pixel space
+            return np.float32(camera_ray(mean_pixel[0], mean_pixel[1], q_b, corr=True)), gate_visible_area
 
     def ir_subscriber(self, msg):
         self.latest_markers = defaultdict(dict)
-        x, xdot, xddot, q = self.state_estimate()
+        self.latest_markers_time = msg.header.stamp
         for marker in msg.markers:
-            self.latest_markers[marker.landmarkID][marker.markerID] = np.array([marker.x, marker.y])
+            self.latest_markers[marker.landmarkID.data][marker.markerID.data] = np.array([marker.x, marker.y])
+        if self.latest_gate_visible_area > 200000:
+            self.target_gate += 1
+            self.latest_gate_visible_area = 0
         
     def armed(self):
         if np.abs(self.tf_prev_x[2] - self.init_position[2]) > 0.1:
@@ -284,8 +327,11 @@ class FlightgogglesController(PIDCascadeV1):
 
     def state_estimate(self):
         if self.use_gt_state:
+            timestamp = self.latest_markers_time
+            if timestamp is None:
+                timestamp = rospy.Time.now()
             try:
-                translation, rotation = self.tf_listener.lookupTransform('world','uav/imu', rospy.Time(0))
+                translation, rotation = self.tf_listener.lookupTransform('world','uav/imu', timestamp)
                 q = np.quaternion(rotation[3], rotation[0], rotation[1], rotation[2])
                 #q = q.conjugate()
                 x = np.array(translation)
@@ -336,7 +382,7 @@ class FlightgogglesNode(object):
         i = 0
         while not rospy.is_shutdown():
             self.controller.pid1(self.path[int(floor(i)) % self.path.shape[0], :])
-            i += 0.9 * 1.1
+            i += 2.0
             rate.sleep()
 
 

@@ -2,6 +2,7 @@
   <arg name="use_external_renderer" default="0" />
   <arg name="ignore_collisions" default="true" />
   <arg name="render_stereo" default="0" />
+  <arg name="use_ir_markers" default="false" />
 
   <group ns="/control_nodes">
     <!-- Start human teleoperation nodes -->
@@ -29,5 +30,8 @@
 
   <node pkg="simcontrol" name="publish_state" type="state_estimation.py" output="screen" />
   <node pkg="simcontrol" name="control_node" type="perception.py" output="screen" />
+  <param name="/use_ir_markers" value="$(arg use_ir_markers)" />
+  
+  <rosparam command="load" file="$(find simcontrol)/config/basic.yaml"/>
 
 </launch>
