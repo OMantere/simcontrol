@@ -282,8 +282,8 @@ class FlightgogglesController(PIDCascadeV1):
                 r4 = self.latest_markers[target_gate_name]['4']
                 gate_visible_area += 0.5 * np.linalg.norm(np.cross(r2 - r1, r3 - r1))
                 gate_visible_area += 0.5 * np.linalg.norm(np.cross(r2 - r4, r3 - r4))
-            # Unit vector in the direction of the average of IR markers in pixel space
             self.latest_gate_visible_area = gate_visible_area
+            # Unit vector in the direction of the average of IR markers in pixel space
             return np.float32(camera_ray(mean_pixel[0], mean_pixel[1], q_b, corr=True)), gate_visible_area
 
     def ir_subscriber(self, msg):
