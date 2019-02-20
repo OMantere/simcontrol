@@ -27,11 +27,6 @@
   <!--For teleoperation, run dynamics in real time-->
   <param name="/use_sim_time" value="false" />
 
-  <remap from="cam0/image_raw" to="uav/camera/left/image_rect_color" />
-  <remap from="imu0" to="sensors/imu" />
-
-  <node pkg="rovio" type="rovio_node" name="rovio" output="screen">
-    <param name="camera0_config" value="$(find simcontrol)/config/cam0.yaml"/>
-  </node>
+  <node pkg="simcontrol" name="publish_state" type="state_estimation.py" output="screen" />
 
 </launch>
