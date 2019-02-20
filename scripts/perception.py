@@ -1,5 +1,6 @@
 #! /usr/bin/python
 
+import os
 import airsim
 import rospy
 import tf
@@ -324,7 +325,7 @@ class AirSimNode(object):
 class FlightgogglesNode(object):
     def __init__(self):
         self.rate = 60
-        self.path = np.genfromtxt('/home/omantere/catkin_ws/src/simcontrol/splines/0.csv', delimiter=',')
+        self.path = np.genfromtxt(os.path.dirname(os.path.realpath(__file__)) + '/../splines/0.csv', delimiter=',')
         self.init_position = self.path[0, :]
         self.hover_test = np.array([self.init_position[0], self.init_position[1], self.init_position[2]+1])
 
