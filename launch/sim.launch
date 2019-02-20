@@ -28,5 +28,6 @@
   <param name="/use_sim_time" value="false" />
 
   <node pkg="simcontrol" name="publish_state" type="state_estimation.py" output="screen" />
+  <node pkg="simcontrol" name="control_node" type="perception.py" output="screen" />
 
 </launch>
