@@ -97,15 +97,13 @@ class PIDCascadeV1(ControllerBase):
             self.command(9.81 * 1.2, np.array([0.0, 0.0, 0.0]))  # c > 1.1 * m * g to arm
             return
         x, xdot, xddot, q_b = estimate
-        ray, area = self.ir_waypoint(q_b)
-        if ray is not None:
-            x_d = ray * 5 + x
-            print('Ray is: ', ray)
-            print('Area is', area)
+        if self.use_ir_markers:
+            ray, area = self.ir_waypoint(q_b)
+            if ray is not None:
+                x_d = ray * 5 + x
         roll, pitch, yaw = self.rpy(q_b)
         g_vec = np.array([0.0, 0.0, -9.81])
         unit_z = np.array([0.0, 0.0, 1.0])
-        print('pos error', x_d - x)
 
         # Position controller
         self.px_pid.setpoint = x_d[0]
@@ -214,10 +212,8 @@ class FlightgogglesController(PIDCascadeV1):
         self.imu_latest_xddot = np.array([0.0, 0.0, 0.0])
         self.imu_latest_omega = np.array([0.0, 0.0, 0.0])
         self.is_armed = False
-        try:
-            self.gate_names = rospy.get_param("/gate_names")
-        except:
-            self.gate_names = None
+        self.gate_names = rospy.get_param("/gate_names") if rospy.has_param('/gate_names') else None
+        self.use_ir_markers = rospy.get_param("/use_ir_markers") if rospy.has_param('/use_ir_markers') else False
         self.target_gate = 0
 
         self.max_omega = 5*np.pi
@@ -274,7 +270,6 @@ class FlightgogglesController(PIDCascadeV1):
             target_markers = [marker for _, marker in self.latest_markers[target_gate_name].items()]
             mean_pixel = sum(target_markers) / len(target_markers)
             gate_visible_area = 0
-            print('%d markers visible' % len(target_markers))
             if len(target_markers) == 4: # If all are visible, compute area
                 r1 = self.latest_markers[target_gate_name]['1']
                 r2 = self.latest_markers[target_gate_name]['2']
@@ -387,7 +382,7 @@ class FlightgogglesNode(object):
         i = 0
         while not rospy.is_shutdown():
             self.controller.pid1(self.path[int(floor(i)) % self.path.shape[0], :])
-            i += 0.9 * 1.1
+            i += 2.0
             rate.sleep()
 
 

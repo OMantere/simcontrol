@@ -29,7 +29,8 @@
 
   <node pkg="simcontrol" name="publish_state" type="state_estimation.py" output="screen" />
   <node pkg="simcontrol" name="control_node" type="perception.py" output="screen" />
-
+  <param name="/use_ir_markers" value="false" />
+  
   <rosparam command="load" file="$(find simcontrol)/config/basic.yaml"/>
 
 </launch>
