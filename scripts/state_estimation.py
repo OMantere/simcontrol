@@ -25,6 +25,9 @@ class EKF(object):
             u[0]: angular velocity x
             u[1]: angular velocity y
             u[2]: angular velocity z
+            u[3]: thrust x
+            u[4]: thrust y
+            u[5]: thrust z
         """
         assert len(initial_state.shape) == 2
         self.x = initial_state
@@ -51,14 +54,12 @@ class EKF(object):
         self.x += K.dot((z - z_hat))
         self.P_post = (self.I - K.dot(H)).dot(P_pre)
 
-        # Normalize quaternion.
-        self.x[6:10] = self.x[6:10] / np.linalg.norm(self.x[6:10], 2)
 
         return self.x, self.P_post
 
     def g(self, x, u):
         angular_velocity = u[0:3]
-        thrust = u[2]
+        thrust = u[5]
 
         x = x
         dx = np.zeros_like(x)
@@ -67,42 +68,48 @@ class EKF(object):
         dx[0:3] = self.dt * x[3:6]
 
         # Update velocity from thrust.
-        dx[3] = self.dt * 2.0 * (x[7] * x[9] + x[8] * x[6]) * thrust
-        dx[4] = self.dt * 2.0 * (x[8] * x[9] - x[7] * x[6]) * thrust
-        dx[5] = self.dt * (1.0 - 2.0 * (x[7]**2 + x[8]**2) * thrust - self.gravity)
-        dx[6] = self.dt * (angular_velocity[0] * x[9] + angular_velocity[1] * x[7] - angular_velocity[1] * x[8])
+        dx[3] = self.dt * 2.0 * (x[6] * x[8] + x[7] * x[9]) * thrust
+        dx[4] = self.dt * 2.0 * (x[7] * x[8] - x[6] * x[9]) * thrust
+        dx[5] = self.dt * ((-x[6]**2 - x[7]**2 + x[8]**2 + x[9]**2) * thrust - self.gravity)
+        dx[6] = self.dt * (angular_velocity[0] * x[9] + angular_velocity[2] * x[7] - angular_velocity[1] * x[8])
         dx[7] = self.dt * (angular_velocity[1] * x[9] - angular_velocity[2] * x[6] + angular_velocity[0] * x[8])
-        dx[8] = self.dt * (angular_velocity[2] * x[9] - angular_velocity[1] * x[6] - angular_velocity[0] * x[7])
+        dx[8] = self.dt * (angular_velocity[2] * x[9] + angular_velocity[1] * x[6] - angular_velocity[0] * x[7])
         dx[9] = self.dt * (-angular_velocity[0] * x[6] - angular_velocity[1] * x[7] - angular_velocity[2] * x[8])
 
         J = self.I.copy()
         J[0, 3] = self.dt
         J[1, 4] = self.dt
         J[2, 5] = self.dt
-        J[3, 6] = 2 * self.dt * x[8] * thrust
-        J[3, 7] = 2 * self.dt * x[9] * thrust
-        J[3, 8] = 2 * self.dt * x[6] * thrust
-        J[3, 9] = 2 * self.dt * x[7] * thrust
-        J[4, 6] = -2 * self.dt * x[7] * thrust
-        J[4, 7] = -2 * self.dt * x[6] * thrust
-        J[4, 8] = 2 * self.dt * x[9] * thrust
-        J[4, 9] = 2 * self.dt * x[9] * thrust
-        J[5, 7] = -4 * self.dt * x[7] * thrust
-        J[5, 8] = -4 * self.dt * x[8] * thrust
+        J[3, 6] = 2.0* self.dt * x[8] * thrust
+        J[3, 7] = 2.0* self.dt * x[9] * thrust
+        J[3, 8] = 2.0* self.dt * x[6] * thrust
+        J[3, 9] = 2.0* self.dt * x[7] * thrust
+        J[4, 6] = -2.0 * self.dt * x[9] * thrust
+        J[4, 7] = 2.0 * self.dt * x[8] * thrust
+        J[4, 8] = 2.0 * self.dt * x[7] * thrust
+        J[4, 9] = -2.0 * self.dt * x[6] * thrust
+        J[5, 6] = -2.0 * self.dt * x[6] * thrust
+        J[5, 7] = -2.0 * self.dt * x[7] * thrust
+        J[5, 8] = 2.0 * self.dt * x[8] * thrust
+        J[5, 9] = 2.0 * self.dt * x[9] * thrust
         J[6, 7] = self.dt * angular_velocity[2]
-        J[6, 8] = self.dt * angular_velocity[1]
+        J[6, 8] = -self.dt * angular_velocity[1]
         J[6, 9] = self.dt * angular_velocity[0]
         J[7, 6] = -self.dt * angular_velocity[2]
         J[7, 8] = self.dt * angular_velocity[0]
         J[7, 9] = self.dt * angular_velocity[1]
-        J[8, 6] = -self.dt * angular_velocity[1]
+        J[8, 6] = self.dt * angular_velocity[1]
         J[8, 7] = -self.dt * angular_velocity[0]
         J[8, 9] = self.dt * angular_velocity[2]
         J[9, 6] = -self.dt * angular_velocity[0]
         J[9, 7] = -self.dt * angular_velocity[1]
         J[9, 8] = -self.dt * angular_velocity[2]
 
-        return x + dx, J
+        x += dx
+        # Normalize quaternion.
+        x[6:10] = x[6:10] / np.linalg.norm(x[6:10], 2)
+
+        return x, J
 
     def h(self, x):
         z = x[3:6]
@@ -170,7 +177,7 @@ class StateEstimatorNode(object):
             imu_msg.linear_acceleration.y,
             imu_msg.linear_acceleration.z
             ])[:, None]
-        u = np.array(self.thrust[0:3])[:, None]
+        u = np.array(self.thrust[0:6])[:, None]
         R = np.array(imu_msg.angular_velocity_covariance).reshape(3, 3)
         mean, _ = self.ekf.step(z, u, R)
         self._publish_frame(mean)
@@ -179,8 +186,8 @@ class StateEstimatorNode(object):
         self.broadcaster.sendTransform((x[0], x[1], x[2]),
                 (x[6], x[7], x[8], x[9]),
                 rospy.Time.now(),
-                'world',
-                'ekf/pose')
+                'ekf/pose',
+                'world')
 
 if __name__ == "__main__":
     try:
