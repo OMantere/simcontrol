@@ -1,0 +1,7 @@
+<launch>
+  <include file="$(find simcontrol)/launch/sim.launch">
+    <arg name="render_stereo" value="false"/>
+  </include>
+  <param name="/use_sim_time" value="true"/>
+  <node pkg="simcontrol" name="control_node" type="control.py" output="screen" />
+</launch>

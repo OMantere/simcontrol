@@ -1,5 +1,0 @@
-<launch>
-  <include file="$(find simcontrol)/launch/sim.launch">
-    <arg name="use_ir_markers" value="true"/>
-  </include>
-</launch>
