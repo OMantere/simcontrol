@@ -303,6 +303,8 @@ class FlightgogglesController(PIDCascadeV1):
             target_gate_center = self.gate_mean[target_gate_name]
             target_gate_distance = np.linalg.norm(target_gate_center - x)
             gate_normal_distance = ray_p_dist(target_gate_center, self.gate_normal[target_gate_name], x)
+            # TODO: Compute the gate normal plane from IR markers and check distance to it
+            # because this fails for wide gates
             if target_gate_distance < self.gate_change_cutoff and gate_normal_distance < self.gate_normal_cutoff:
                 self.target_gate += 1
                 if self.target_gate < len(self.gate_names):
