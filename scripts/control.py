@@ -181,7 +181,7 @@ class FlightgogglesController(PIDCascadeV1):
         self.reference_lead_steps = 2
         self.target_update_weight = 1.0
         self.target_vector = np.float32([0, 0, 0])
-        self.prev_tf_time = time.time()
+        self.prev_tf_time = rospy.Time.now()
 
         self.max_omega = 5*np.pi
         # TODO: Extract PID configuration into a function
@@ -281,6 +281,7 @@ class FlightgogglesController(PIDCascadeV1):
 
     def tangent_unit_vector(self, x1, x2):
         return (x2 - x1) / np.linalg.norm(x2 - x1)
+
 
     def loop(self):
         rate = rospy.Rate(self.rate)
@@ -403,8 +404,8 @@ class FlightgogglesController(PIDCascadeV1):
                 xdot = self.tf_prev_xdot
                 xddot = self.tf_prev_xddot
                 if timestamp is None:
-                    time_elapsed = time.time() - self.prev_tf_time
-                    true_rate = 1/time_elapsed
+                    time_elapsed = rospy.Time.now() - self.prev_tf_time
+                    true_rate = 1/time_elapsed.to_sec()
                     xdot = true_rate * (x - self.tf_prev_x)
                     xddot = true_rate * (xdot - self.tf_prev_xdot)
                     self.prev_tf_time = self.prev_tf_time + time_elapsed
@@ -421,7 +422,7 @@ class FlightgogglesController(PIDCascadeV1):
 
 if __name__ == '__main__':
     try:
-        node = FlightgogglesController(rate=120, use_gt_state=True)
+        node = FlightgogglesController(rate=1000, use_gt_state=True)
         node.loop()
     except rospy.ROSInterruptException:
         pass
