@@ -3,12 +3,16 @@ from __future__ import print_function
 import numpy as np
 import rospy
 import tf
-from geometry_msgs.msg import TransformStamped, Vector3, Quaternion
+import quaternion
+import math_utils
+from geometry_msgs.msg import Quaternion, Vector3
 from mav_msgs.msg import RateThrust
+from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
 from std_msgs.msg import Empty
 
 GRAVITY = 9.81000041962
+EPSILON = np.finfo(np.float64).eps
 
 class EKF(object):
     def __init__(self, initial_state, sampling_time,
@@ -49,11 +53,9 @@ class EKF(object):
         P_pre = J * self.P_post * J.T + self.Q
 
         K = np.linalg.solve((H.dot(P_pre).dot(H.T)).T + R, H.dot(P_pre)).T
-        assert (P_pre - P_pre.T).sum() < 1e-12
 
         self.x += K.dot((z - z_hat))
         self.P_post = (self.I - K.dot(H)).dot(P_pre)
-
 
         return self.x, self.P_post
 
@@ -112,8 +114,9 @@ class EKF(object):
         return x, J
 
     def h(self, x):
-        z = x[3:6]
-        return z, np.eye(3, 10)
+        # Only the orientation is being measured as it currently stands.
+        z = x[6:]
+        return z, np.eye(4, 10)
 
 class StateEstimatorNode(object):
     def __init__(self):
@@ -127,15 +130,18 @@ class StateEstimatorNode(object):
                 name='/uav/input/rateThrust',
                 data_class=RateThrust,
                 callback=self._thrust_callback)
-        self.broadcaster = tf.TransformBroadcaster()
+        self.odometry = rospy.topics.Publisher("odometry/ekf",
+                Odometry,
+                queue_size=1)
 
+        self.broadcaster = tf.TransformBroadcaster()
         self.reset_sub = rospy.topics.Subscriber(
                 name='ekf/reset',
                 data_class=Empty,
                 callback=self._reset)
 
         x = self._initial_pose()
-        self._publish_frame(x)
+        self._publish_frame(x, np.eye(10) * 0.1)
 
         self.ekf = EKF(initial_state=x,
                 sampling_time=1.0/120.0, m=3)
@@ -143,6 +149,7 @@ class StateEstimatorNode(object):
         self.tf = tf.TransformListener(True, rospy.Duration(0.1))
 
     def _reset(self, *args):
+        # This is here for debugging purposes only.
         xyz, q = self.tf.lookupTransform('world', 'uav/imu', rospy.Time(0))
         x = np.array([xyz[0], xyz[1], xyz[2],
             0, 0, 0,
@@ -161,6 +168,21 @@ class StateEstimatorNode(object):
             0.0, 0.0, GRAVITY
             ])[:, None]
 
+    def _solve_for_orientation(self, imu_msg):
+        # Let f be the thrust vector in the imu frame (towards the z-axis of the drone).
+        # a is the measured acceleration in the imu frame.
+        # q is the orientation quaternion.
+        #
+        # q * (f + a) * q.inverse() = g
+        # I.e. we want to find the rotation q which rotates f + a to g.
+        f = np.array([0.0, 0.0, self.thrust[5]])
+        a = np.array([imu_msg.linear_acceleration.x, imu_msg.linear_acceleration.y, imu_msg.linear_acceleration.z])
+        g = np.array([0.0, 0.0, -GRAVITY])
+
+        f_plus_a = f + a
+        q = math_utils.shortest_arc(f_plus_a, g)
+        return quaternion.as_float_array(q)[:, None]
+
     def _thrust_callback(self, thrust_msg):
         self.thrust = np.array([
             thrust_msg.angular_rates.x,
@@ -172,17 +194,30 @@ class StateEstimatorNode(object):
         ])
 
     def _imu_callback(self, imu_msg):
-        z = np.array([
-            imu_msg.linear_acceleration.x,
-            imu_msg.linear_acceleration.y,
-            imu_msg.linear_acceleration.z
-            ])[:, None]
+        orientation = self._solve_for_orientation(imu_msg)
         u = np.array(self.thrust[0:6])[:, None]
-        R = np.array(imu_msg.angular_velocity_covariance).reshape(3, 3)
-        mean, _ = self.ekf.step(z, u, R)
-        self._publish_frame(mean)
+        # TODO figure out how to model uncertainty.
+        R = np.eye(4) * imu_msg.angular_velocity_covariance[0]
+        self.done = True
+        mean, cov = self.ekf.step(orientation, u, R)
+        self._publish_frame(mean, cov)
 
-    def _publish_frame(self, x):
+    def _publish_frame(self, x, cov):
+        msg = Odometry()
+        msg.header.stamp = rospy.Time.now()
+        msg.header.frame_id = 'world'
+        msg.child_frame_id = 'uav/imu'
+        msg.pose.pose.position = Vector3(x[0], x[1], x[2])
+        msg.pose.pose.orientation = Quaternion(x[6], x[7], x[8], x[9])
+        msg.pose.covariance[0] = -1.0
+        #TODO populate covariance. Has to be calculated
+        # in terms of covariance in x, y, z axis rotation.
+
+        msg.twist.twist.linear = Vector3(x[3], x[4], x[5])
+        covariance = np.zeros((6, 6))
+        covariance[0:3, 0:3] = cov[3:6, 3:6]
+        msg.twist.covariance = covariance.ravel().tolist()
+        self.odometry.publish(msg)
         self.broadcaster.sendTransform((x[0], x[1], x[2]),
                 (x[6], x[7], x[8], x[9]),
                 rospy.Time.now(),

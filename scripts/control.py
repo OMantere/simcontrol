@@ -10,6 +10,7 @@ from math import *
 from collections import defaultdict
 import numpy as np
 import quaternion
+import math_utils
 from simple_pid import PID
 from mav_msgs.msg import RateThrust
 from sensor_msgs.msg import Imu
@@ -44,7 +45,7 @@ class PIDCascadeV1(ControllerBase):
         self.vx_pid = PID(*pki2xy, sample_time=self.sample_time)
         self.vy_pid = PID(*pki2xy, sample_time=self.sample_time)
         self.vz_pid = PID(*pki2z, sample_time=self.sample_time)
-        self.thetax_pid = PID(*pki3, sample_time=self.sample_time) 
+        self.thetax_pid = PID(*pki3, sample_time=self.sample_time)
         self.thetay_pid = PID(*pki3, sample_time=self.sample_time)
         self.thetaz_pid = PID(*pki3z, sample_time=self.sample_time)
         self.vx_pid.output_limits = axy_lim
@@ -81,14 +82,6 @@ class PIDCascadeV1(ControllerBase):
         qr = q_b.conjugate() * qr * q_b
         return np.array([qr.x, qr.y, qr.z])
 
-    def shortest_arc(self, v1, v2):
-        cross = np.cross(v1, v2)
-        v1sqr = np.dot(v1,v1)
-        v2sqr = np.dot(v2,v2)
-        q = np.quaternion(np.sqrt(v1sqr * v2sqr) + np.dot(v1, v2), cross[0], cross[1], cross[2])
-        norm = np.sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z)
-        return np.quaternion(q.w / norm, q.x / norm, q.y / norm, q.z / norm)
-
     def pid1(self, x_d, estimate):
         """x_d is relative target position"""
         if not estimate:
@@ -124,7 +117,7 @@ class PIDCascadeV1(ControllerBase):
         a_db = self.w2b(q_b, a_d - g_vec)
 
         # Find desired attitude correction using shortest arc algorithm
-        q_theta = self.shortest_arc(unit_z, a_db)
+        q_theta = math_utils.shortest_arc(unit_z, a_db)
         roll_d, pitch_d, yaw_d = self.rpy(q_theta)
         looking_gate = min(len(self.gate_names) - 1, self.target_gate+1)
         pointing_v = self.gate_mean[self.gate_names[looking_gate]] - x # Point towards the next gate
@@ -202,7 +195,7 @@ class FlightgogglesController(PIDCascadeV1):
         self.vx_pid = PID(*pki2xy, sample_time=self.sample_time)
         self.vy_pid = PID(*pki2xy, sample_time=self.sample_time)
         self.vz_pid = PID(*pki2z, sample_time=self.sample_time)
-        self.thetax_pid = PID(*pki3, sample_time=self.sample_time) 
+        self.thetax_pid = PID(*pki3, sample_time=self.sample_time)
         self.thetay_pid = PID(*pki3, sample_time=self.sample_time)
         self.thetaz_pid = PID(*pki3z, sample_time=self.sample_time)
         self.vx_pid.output_limits = axy_lim
@@ -265,7 +258,7 @@ class FlightgogglesController(PIDCascadeV1):
             else:
                 p[i*2+1, :] = point_b
                 p[i*2+2, :] = point_a
-            
+
         n = 10
         ev, total = self.linear_interpolate(p, n)
         self.path = ev[:total, :]
@@ -356,7 +349,7 @@ class FlightgogglesController(PIDCascadeV1):
         self.latest_markers_time = msg.header.stamp
         for marker in msg.markers:
             self.latest_markers[marker.landmarkID.data][marker.markerID.data] = np.array([marker.x, marker.y])
-        
+
     def armed(self):
         if np.abs(self.tf_prev_x[2] - self.init_position[2]) > 0.1:
             self.is_armed = True
@@ -415,7 +408,7 @@ class FlightgogglesController(PIDCascadeV1):
                     self.tf_prev_xdot = xdot
                     self.tf_prev_xddot = xddot
                 return x, xdot, xddot, q
-            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException): 
+            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                 return self.init_position, np.float32([0, 0, 0]), np.float32([0, 0, 0]), self.init_orientation
         else:
             raise NotImplementedError('Non-GT state estimate not implemented')
