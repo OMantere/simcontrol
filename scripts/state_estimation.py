@@ -13,6 +13,12 @@ from std_msgs.msg import Empty
 
 GRAVITY = 9.81000041962
 EPSILON = np.finfo(np.float64).eps
+gravity_vector = np.array([0., 0., -GRAVITY])
+
+def solve_for_orientation(f, a):
+    # Gravity is subtracted
+    a_without_thrust = (a - f)
+    return math_utils.shortest_arc(a_without_thrust, gravity_vector)
 
 class EKF(object):
     def __init__(self, initial_state, sampling_time,
@@ -50,12 +56,15 @@ class EKF(object):
         self.x, J = self.g(self.x, u)
         z_hat, H = self.h(self.x)
 
-        P_pre = J * self.P_post * J.T + self.Q
+        P_pre = J.dot(self.P_post).dot(J.T) + self.Q
 
         K = np.linalg.solve((H.dot(P_pre).dot(H.T)).T + R, H.dot(P_pre)).T
 
         self.x += K.dot((z - z_hat))
         self.P_post = (self.I - K.dot(H)).dot(P_pre)
+
+        # Normalize quaternion.
+        self.x[6:10] = self.x[6:10] / np.linalg.norm(self.x[6:10], 2)
 
         return self.x, self.P_post
 
@@ -157,6 +166,7 @@ class StateEstimatorNode(object):
         self.ekf.reset(x)
 
     def _initial_pose(self):
+        # Initial pose in [x y z w]
         initial_pose = np.array(rospy.get_param('/uav/flightgoggles_uav_dynamics/init_pose'))[:, None]
         x = np.zeros((10, 1))
         x[0:3] = initial_pose[0:3]
@@ -177,11 +187,9 @@ class StateEstimatorNode(object):
         # I.e. we want to find the rotation q which rotates f + a to g.
         f = np.array([0.0, 0.0, self.thrust[5]])
         a = np.array([imu_msg.linear_acceleration.x, imu_msg.linear_acceleration.y, imu_msg.linear_acceleration.z])
-        g = np.array([0.0, 0.0, -GRAVITY])
-
-        f_plus_a = f + a
-        q = math_utils.shortest_arc(f_plus_a, g)
-        return quaternion.as_float_array(q)[:, None]
+        quaternion = solve_for_orientation(f, a)
+        # Return value in [x y z w]
+        return np.array([quaternion.x, quaternion.y, quaternion.z, quaternion.w])[:, None]
 
     def _thrust_callback(self, thrust_msg):
         self.thrust = np.array([
