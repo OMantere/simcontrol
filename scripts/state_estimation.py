@@ -211,12 +211,15 @@ class StateEstimatorNode(object):
         self._publish_frame(mean, cov)
 
     def _publish_frame(self, x, cov):
+        asd = x[6:10]
+        if np.linalg.norm(asd) - 1.0 > 1e-15:
+            print('State:', x)
         msg = Odometry()
         msg.header.stamp = rospy.Time.now()
         msg.header.frame_id = 'world'
         msg.child_frame_id = 'uav/imu'
         msg.pose.pose.position = Vector3(x[0], x[1], x[2])
-        msg.pose.pose.orientation = Quaternion(x[6], x[7], x[8], x[9])
+        msg.pose.pose.orientation = Quaternion(x[7], x[8], x[9], x[6])
         msg.pose.covariance[0] = -1.0
         #TODO populate covariance. Has to be calculated
         # in terms of covariance in x, y, z axis rotation.
@@ -227,7 +230,7 @@ class StateEstimatorNode(object):
         msg.twist.covariance = covariance.ravel().tolist()
         self.odometry.publish(msg)
         self.broadcaster.sendTransform((x[0], x[1], x[2]),
-                (x[6], x[7], x[8], x[9]),
+                (x[7], x[8], x[9], x[6]),
                 rospy.Time.now(),
                 'ekf/pose',
                 'world')
