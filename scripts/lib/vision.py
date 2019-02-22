@@ -1,5 +1,6 @@
 import numpy as np
 import quaternion
+import cv2
 
 w = 1028
 h = 768
@@ -50,3 +51,43 @@ def camera_ray(x, y, q, corr=False):
 def ray_p_dist(o, d, p, pert=np.float32([0.0, 0.0, 0.0]), stereo=False):
     pdot = p - o
     return np.linalg.norm(np.cross(pdot, d))
+
+def to_rvec(q):
+    return cv2.Rodrigues(quaternion.as_rotation_matrix(q))[0]
+
+def to_q(rvec):
+    return quaternion.from_rotation_matrix(cv2.Rodrigues(rvec)[0])
+
+def cv_point_trans(x):
+    return np.float32([-x[1], -x[2], x[0]])
+
+def cv_point_inv_trans(x):
+    return np.float32([x[2], -x[0], -x[1]])
+
+def cv_q_trans(q):
+    return np.quaternion(-q.w, -q.y, -q.z, q.x)
+
+def cv_q_inv_trans(q):
+    return np.quaternion(q.w, q.z, -q.x, -q.y)
+
+def axis_angle(q):
+    n = np.float32([q.x, q.y, q.z])
+    n_norm = np.linalg.norm(n)
+    return n/n_norm, 2 * np.arctan2(n_norm, q.w)
+
+def axis_angle_inv(axis, angle):
+    x = axis[0] * np.sin(angle/2)
+    y = axis[1] * np.sin(angle/2)
+    z = axis[2] * np.sin(angle/2)
+    return np.quaternion(np.cos(angle/2), x, y, z)
+
+def rvec2q(rvec):
+    angle = np.linalg.norm(rvec)
+    r = rvec / angle
+    return axis_angle_inv(r, angle)
+
+def q2rvec(q):
+    return to_rvec(cv_q_trans(q))
+
+def rvec2q(rvec):
+    return cv_q_inv_trans(to_q(rvec))

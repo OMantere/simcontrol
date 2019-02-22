@@ -15,7 +15,7 @@ from simple_pid import PID
 from mav_msgs.msg import RateThrust
 from sensor_msgs.msg import Imu
 from flightgoggles.msg import IRMarkerArray, IRMarker
-from lib.graphix import camera_ray, ray_p_dist
+from lib.vision import camera_ray, ray_p_dist
 
 class ControllerBase(object):
     def __init__(self, rate):
