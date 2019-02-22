@@ -123,7 +123,7 @@ class StateEstimatorNode(object):
         self.thrust = self._initial_thrust()
         rospy.init_node('state_estimator')
         self.imu_sub = rospy.topics.Subscriber(
-                name="/uav/sensors/imu",
+                name="/sensors/imu",
                 data_class=Imu,
                 callback=self._imu_callback)
         self.thrust_sub = rospy.topics.Subscriber(
@@ -160,8 +160,7 @@ class StateEstimatorNode(object):
         initial_pose = np.array(rospy.get_param('/uav/flightgoggles_uav_dynamics/init_pose'))[:, None]
         x = np.zeros((10, 1))
         x[0:3] = initial_pose[0:3]
-        x[6] = initial_pose[6]
-        x[7:] = initial_pose[3:6]
+        x[6:] = initial_pose[3:]
         return x
 
     def _initial_thrust(self):
@@ -205,7 +204,6 @@ class StateEstimatorNode(object):
 
     def _publish_frame(self, x, cov):
         msg = Odometry()
-        print(x)
         msg.header.stamp = rospy.Time.now()
         msg.header.frame_id = 'world'
         msg.child_frame_id = 'uav/imu'
@@ -232,4 +230,5 @@ if __name__ == "__main__":
         rospy.spin()
     except rospy.ROSInterruptException:
         pass
+
 

@@ -23,6 +23,8 @@ class ControllerBase(object):
         self.g = 9.81
         self.sample_time = 1.0/rate
         self.max_omega = np.pi
+        self.g_vec = np.array([0.0, 0.0, -9.81])
+        self.unit_z = np.array([0.0, 0.0, 1.0])
 
 
 class PIDCascadeV1(ControllerBase):
@@ -92,8 +94,6 @@ class PIDCascadeV1(ControllerBase):
             return
         x, xdot, xddot, q_b = estimate
         roll, pitch, yaw = self.rpy(q_b)
-        g_vec = np.array([0.0, 0.0, -9.81])
-        unit_z = np.array([0.0, 0.0, 1.0])
 
         # Position controller
         self.px_pid.setpoint = x_d[0]
@@ -114,10 +114,10 @@ class PIDCascadeV1(ControllerBase):
         a_d[2] = self.vz_pid(xdot[2])
 
         # World to body transform
-        a_db = self.w2b(q_b, a_d - g_vec)
+        a_db = self.w2b(q_b, a_d - self.g_vec)
 
         # Find desired attitude correction using shortest arc algorithm
-        q_theta = math_utils.shortest_arc(unit_z, a_db)
+        q_theta = math_utils.shortest_arc(self.unit_z, a_db)
         roll_d, pitch_d, yaw_d = self.rpy(q_theta)
         looking_gate = min(len(self.gate_names) - 1, self.target_gate+1)
         pointing_v = self.gate_mean[self.gate_names[looking_gate]] - x # Point towards the next gate
@@ -162,10 +162,12 @@ class FlightgogglesController(PIDCascadeV1):
         self.tf_prev_x = self.init_position
         self.tf_prev_xdot = np.array([0.0, 0.0, 0.0])
         self.tf_prev_xddot = np.array([0.0, 0.0, 0.0])
+        self.tf_prev_q = np.quaternion(1.0, 0.0, 0.0, 0.0)
         self.imu_latest_x = self.init_position
         self.imu_latest_xdot = np.array([0.0, 0.0, 0.0])
         self.imu_latest_xddot = np.array([0.0, 0.0, 0.0])
         self.imu_latest_omega = np.array([0.0, 0.0, 0.0])
+        self.imu_latest_q = np.quaternion(1.0, 0.0, 0.0, 0.0)
         self.is_armed = False
         self.gate_names = rospy.get_param("/gate_names") if rospy.has_param('/gate_names') else None
         self.use_ir_markers = rospy.get_param("/use_ir_markers") if rospy.has_param('/use_ir_markers') else True
@@ -347,13 +349,28 @@ class FlightgogglesController(PIDCascadeV1):
     def ir_subscriber(self, msg):
         self.latest_markers = defaultdict(dict)
         self.latest_markers_time = msg.header.stamp
+        #print('left')
+        #print("%f %f %f" % (self.tf_prev_x[0], self.tf_prev_x[1], self.tf_prev_x[2]))
+        #print("%f %f %f %f" % (self.tf_prev_q.w, self.tf_prev_q.x, self.tf_prev_q.y, self.tf_prev_q.z))
+        i = 0
         for marker in msg.markers:
             self.latest_markers[marker.landmarkID.data][marker.markerID.data] = np.array([marker.x, marker.y])
+            #print(str(marker.landmarkID) + " " + str(marker.markerID) + " " + str(marker.x) + " " + str(marker.y))
+            i += 1
 
     def armed(self):
         if np.abs(self.tf_prev_x[2] - self.init_position[2]) > 0.1:
             self.is_armed = True
         return self.is_armed
+
+    def q_from_xddot(self, xddot):
+        # Solve for collective thrust, cause we know thrust is up
+        print('xddot is ', xddot)
+        c = xddot[2] - np.sqrt(-xddot[0]*xddot[0] - xddot[1]*xddot[1] + self.g*self.g)
+        xddot_corr = np.float32([xddot[0], xddot[1], xddot[2] - c])
+        q = math_utils.shortest_arc(self.unit_z, xddot_corr)
+        print('q_estimated is', q)
+        print('q real is', self.tf_prev_q)
 
     def imu_subscriber(self, msg):
         omega = np.array([msg.angular_velocity.x, msg.angular_velocity.y, msg.angular_velocity.z])
@@ -361,6 +378,7 @@ class FlightgogglesController(PIDCascadeV1):
         xddot = np.array([msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z])
         xdot = self.imu_latest_xdot + (xddot + self.imu_latest_xddot) / 2 * self.sample_time  # Integrate from xddot
         x = self.imu_latest_x + (xdot + self.imu_latest_xdot) / 2 * self.sample_time  # Integrate from xdot
+        #self.q_from_xddot(xddot)
         self.imu_latest_x = x
         self.imu_latest_xdot = xdot
         self.imu_latest_xddot = xddot
@@ -371,13 +389,13 @@ class FlightgogglesController(PIDCascadeV1):
         omega_y = float(omega[1]) / self.max_omega
         omega_z = float(omega[2]) / self.max_omega
         msg = RateThrust()
-        msg.thrust.x = 0
+        msg.thrust.x = 0   
         msg.thrust.y = 0
         msg.thrust.z = c
         msg.angular_rates.x = omega_x
         msg.angular_rates.y = omega_y
         msg.angular_rates.z = omega_z
-        self.rate_thrust_publisher.publish(msg)
+        #self.rate_thrust_publisher.publish(msg)
 
     def axis_angle(self, axis, angle):
         x = axis[0] * np.sin(angle)
@@ -407,6 +425,7 @@ class FlightgogglesController(PIDCascadeV1):
                     self.tf_prev_x = x
                     self.tf_prev_xdot = xdot
                     self.tf_prev_xddot = xddot
+                    self.tf_prev_q = q
                 return x, xdot, xddot, q
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                 return self.init_position, np.float32([0, 0, 0]), np.float32([0, 0, 0]), self.init_orientation

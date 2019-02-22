@@ -4,4 +4,5 @@
   </include>
   <param name="/use_sim_time" value="true"/>
   <node pkg="simcontrol" name="control_node" type="control.py" output="screen" />
+  <param name="/use_ir_markers" value="true"/>
 </launch>
