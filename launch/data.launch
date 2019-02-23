@@ -2,6 +2,7 @@
   <include file="$(find simcontrol)/launch/sim.launch">
     <arg name="use_ir_markers" value="false"/>
     <arg name="render_stereo" value="1"/>
+    <arg name="gate_locations" value="$(find simcontrol)/config/gate_locations_no_perturbation.yaml" />
   </include>
   <node pkg="simcontrol" name="data_gen" type="data_generator.py" output="screen" />
 </launch>
