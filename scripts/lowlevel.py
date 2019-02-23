@@ -18,6 +18,7 @@ from lib.graphix import camera_ray, ray_p_dist
 from simcontrol.msg import State
 from geometry_msgs.msg import Pose
 from std_msgs.msg import Bool
+import math_utils
 
 class ControllerBase(object):
     def __init__(self):
@@ -45,7 +46,7 @@ class PIDCascadeV1(ControllerBase):
         self.vx_pid = PID(*pki2xy, sample_time=self.sample_time)
         self.vy_pid = PID(*pki2xy, sample_time=self.sample_time)
         self.vz_pid = PID(*pki2z, sample_time=self.sample_time)
-        self.thetax_pid = PID(*pki3, sample_time=self.sample_time) 
+        self.thetax_pid = PID(*pki3, sample_time=self.sample_time)
         self.thetay_pid = PID(*pki3, sample_time=self.sample_time)
         self.thetaz_pid = PID(*pki3z, sample_time=self.sample_time)
         self.vx_pid.output_limits = axy_lim
@@ -69,26 +70,27 @@ class PIDCascadeV1(ControllerBase):
         self.armed = False
         self.takeoff = False
 
-        self.state_sub = rospy.Subscriber('/simcontrol/state_estimate', State, self.state_subscriber)
-        self.x_d_sub = rospy.Subscriber('/simcontrol/target_pose', Pose, self.target_subscriber)
-        self.armed_sub = rospy.Subscriber('/simcontrol/armed', Bool, self.armed_subscriber)
-        self.takeoff_sub = rospy.Subscriber('/simcontrol/takeoff', Bool, self.takeoff_subscriber)
+        self.state_sub = rospy.Subscriber('/simcontrol/state_estimate', State, self.state_subscriber, queue_size=1)
+        self.x_d_sub = rospy.Subscriber('/simcontrol/target_pose', Pose, self.target_subscriber, queue_size=1)
+        self.takeoff_sub = rospy.Subscriber('/simcontrol/takeoff', Bool, self.takeoff_subscriber, queue_size=1)
         self.rate_thrust_publisher = rospy.Publisher('/uav/input/rateThrust', RateThrust, queue_size=1)
 
     def state_subscriber(self, msg):
         p = msg.pose.position
         q = msg.pose.orientation
         v = msg.linear_velocity
+        self.x = p
+        self.xdot = np.array([msg.linear_velocity.x,
+            msg.linear_velocity.y,
+            msg.linear_velocity.z])
 
     def target_subscriber(self, msg):
         q = msg.orientation
-        q_d = np.quaternion([q.w, q.x, q.y, q.z])
+        q_d = np.quaternion(q.w, q.x, q.y, q.z)
         p = msg.position
         self.x_d = np.float32([p.x, p.y, p.z])
         _, _, self.yaw_d = self.rpy(q)
-
-    def armed_subscriber(self, msg):
-        self.armed = msg.data
+        self.q_b = q_d
 
     def takeoff_subscriber(self, msg):
         self.takeoff = msg.data
@@ -116,14 +118,6 @@ class PIDCascadeV1(ControllerBase):
         qr = np.quaternion(0.0, a_d[0], a_d[1], a_d[2])
         qr = q_b.conjugate() * qr * q_b
         return np.array([qr.x, qr.y, qr.z])
-
-    def shortest_arc(self, v1, v2):
-        cross = np.cross(v1, v2)
-        v1sqr = np.dot(v1,v1)
-        v2sqr = np.dot(v2,v2)
-        q = np.quaternion(np.sqrt(v1sqr * v2sqr) + np.dot(v1, v2), cross[0], cross[1], cross[2])
-        norm = np.sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z)
-        return np.quaternion(q.w / norm, q.x / norm, q.y / norm, q.z / norm)
 
     def pid1(self, x_d, estimate):
         """x_d is relative target position"""
@@ -161,7 +155,7 @@ class PIDCascadeV1(ControllerBase):
         a_db = self.w2b(q_b, a_d - g_vec)
 
         # Find desired attitude correction using shortest arc algorithm
-        q_theta = self.shortest_arc(unit_z, a_db)
+        q_theta = math_utils.shortest_arc(unit_z, a_db)
         roll_d, pitch_d, _ = self.rpy(q_theta)
         yaw_d = self.yaw_d
         yaw = yaw % (2*np.pi)
@@ -183,12 +177,9 @@ class PIDCascadeV1(ControllerBase):
         c = np.linalg.norm(a_db) # Desired thrust is norm of desired acceleration
         self.command(c, omega_d)
 
-
     def loop(self):
         rospy.init_node('drone_lowlevel', anonymous=True)
         i = 0
-        import time
-        import math
         elapsed = time.time()
         self.armed = True
         while not rospy.is_shutdown():
