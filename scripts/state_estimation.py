@@ -64,10 +64,10 @@ class Dynamics(object):
         dx[3] = self.dt * 2.0 * (x[6] * x[8] + x[7] * x[9]) * thrust
         dx[4] = self.dt * 2.0 * (x[7] * x[8] - x[6] * x[9]) * thrust
         dx[5] = self.dt * ((-x[6]**2 - x[7]**2 + x[8]**2 + x[9]**2) * thrust - self.gravity)
-        dx[6] = self.dt * (angular_velocity[0] * x[9] + angular_velocity[2] * x[7] - angular_velocity[1] * x[8])
-        dx[7] = self.dt * (angular_velocity[1] * x[9] - angular_velocity[2] * x[6] + angular_velocity[0] * x[8])
-        dx[8] = self.dt * (angular_velocity[2] * x[9] + angular_velocity[1] * x[6] - angular_velocity[0] * x[7])
-        dx[9] = self.dt * (-angular_velocity[0] * x[6] - angular_velocity[1] * x[7] - angular_velocity[2] * x[8])
+        dx[6] = self.dt * 0.5*(angular_velocity[0] * x[9] + angular_velocity[2] * x[7] - angular_velocity[1] * x[8])
+        dx[7] = self.dt * 0.5*(angular_velocity[1] * x[9] - angular_velocity[2] * x[6] + angular_velocity[0] * x[8])
+        dx[8] = self.dt * 0.5*(angular_velocity[2] * x[9] + angular_velocity[1] * x[6] - angular_velocity[0] * x[7])
+        dx[9] = self.dt * 0.5*(-angular_velocity[0] * x[6] - angular_velocity[1] * x[7] - angular_velocity[2] * x[8])
 
         x += dx
         # Normalize quaternion.
