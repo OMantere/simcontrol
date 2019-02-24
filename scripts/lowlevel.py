@@ -65,6 +65,7 @@ class PIDCascadeV1(ControllerBase):
         self.q_b = None
 
         self.x_d = None
+        self.q_d = None
 
         self.takeoff = False
 
@@ -87,6 +88,8 @@ class PIDCascadeV1(ControllerBase):
     def _target_callback(self, msg):
         position = msg.position
         self.x_d = np.float32([position.x, position.y, position.z])
+        orientation = msg.orientation
+        self.q_d = np.quaternion(orientation.w, orientation.x, orientation.y, orientation.z)
 
     def _takeoff_callback(self, msg):
         self.command(9.81 * 1.1, np.array([0.0, 0.0, 0.0]))  # c > 1.1 * m * g to arm
@@ -110,6 +113,9 @@ class PIDCascadeV1(ControllerBase):
         t4 = 1.0 - 2.0 * (ysqr + z * z)
         yaw = np.arctan2(t3, t4)
         return roll, pitch, yaw
+
+    def _desired_yaw(self):
+        return quaternion.as_euler_angles(self.q_d)[2]
 
     def world_to_body(self, q_b, a_d):
         qr = np.quaternion(0.0, a_d[0], a_d[1], a_d[2])
@@ -151,17 +157,13 @@ class PIDCascadeV1(ControllerBase):
 
         # Find desired attitude correction using shortest arc algorithm
         q_theta = math_utils.shortest_arc(unit_z, a_db)
-        roll_d, pitch_d, yaw_d = self.rpy(q_theta)
-        yaw = yaw % (2*np.pi)
-        yaw_d = yaw_d % (2*np.pi)
-        yaw_diff = (yaw_d - yaw) % (2*np.pi)
-        if yaw_diff > np.pi:
-            yaw_diff -= 2*np.pi
+        roll_d, pitch_d, _ = self.rpy(q_theta)
+        yaw_d = self._desired_yaw()
 
         # Apply attitude corrections using attitude PID
         self.thetax_pid.setpoint = roll_d
         self.thetay_pid.setpoint = pitch_d
-        self.thetaz_pid.setpoint = yaw_diff
+        self.thetaz_pid.setpoint = yaw_d
         omega_d = np.array([0.0, 0.0, 0.0])
         omega_d[0] = self.thetax_pid(0.0) # 0 because a correction quantity is being tracked
         omega_d[1] = self.thetay_pid(0.0)

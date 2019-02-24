@@ -157,8 +157,29 @@ class FlightgogglesController(object):
                     print("Finished course")
             rate.sleep()
 
+    def _gaze_direction(self, x):
+        gaze_target_gate = min(len(self.gate_names) - 1, self.target_gate+1)
+        pointing_direction = self.gate_mean[self.gate_names[gaze_target_gate]] - x
+        if self.use_ir_markers:
+            ir_ray = self.ir_waypoint()
+            if ir_ray is not None:
+                pointing_direction = ir_ray
+        return pointing_direction
+
+    def _yaw_quaternion(self, x):
+        # Returns a quaternion which represents only the orientation
+        # encoding only the desired yaw. The low level controller
+        # is free to set the other orientation parameters.
+        gaze_direction = self._gaze_direction(x)
+        yaw_angle = np.arctan2(gaze_direction[1], gaze_direction[0])
+        rotation = np.sin(yaw_angle/2.)
+        q = np.cos(yaw_angle/2.) + (np.sin(yaw_angle/2.) * quaternion.z)
+        return q.normalized()
+
     def _set_target(self, target_vector, state_estimate):
         x, xdot, xddot, q = state_estimate
+
+
         current_state = State()
         current_state.header.stamp = rospy.Time.now()
         current_state.header.frame_id = 'state_estimate'
@@ -170,6 +191,9 @@ class FlightgogglesController(object):
 
         target_pose = Pose()
         target_pose.position = Vector3(target_vector[0], target_vector[1], target_vector[2])
+
+        q = self._yaw_quaternion(x)
+        target_pose.orientation = Quaternion(q.x, q.y, q.z, q.w)
         self.target_pub.publish(target_pose)
 
     def reference_target_vector(self, x):
