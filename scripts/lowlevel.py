@@ -59,12 +59,12 @@ class PIDCascadeV1(ControllerBase):
         self.thetay_pid.output_limits = omegaxy_lim
         self.thetaz_pid.output_limits = omegaz_lim
 
-        self.x = np.float32([0,0,0])
-        self.xdot = np.float32([0,0,0])
-        self.xddot = np.float32([0,0,0])
-        self.q_b = np.quaternion(1.0, 0.0, 0.0, 0.0)
+        self.x = None
+        self.xdot = None
+        self.xddot = None
+        self.q_b = None
 
-        self.x_d = np.float32([0,0,0])
+        self.x_d = None
 
         self.takeoff = False
 
@@ -85,8 +85,6 @@ class PIDCascadeV1(ControllerBase):
         self.q_b = np.quaternion(orientation.w, orientation.x, orientation.y, orientation.z)
 
     def _target_callback(self, msg):
-        orientation = msg.orientation
-        q_d = np.quaternion(orientation.w, orientation.x, orientation.y, orientation.z)
         position = msg.position
         self.x_d = np.float32([position.x, position.y, position.z])
 
@@ -118,18 +116,19 @@ class PIDCascadeV1(ControllerBase):
         qr = q_b.conjugate() * qr * q_b
         return np.array([qr.x, qr.y, qr.z])
 
-    def pid(self, x_d, estimate):
+    def pid(self):
         """x_d is relative target position"""
         if not self.takeoff:
             return
-        if not estimate:
+        if self.x is None:
             print("PID controller: Failed to get state estimate, skipping frame")
             return
-        x, xdot, xddot, q_b = estimate
-        roll, pitch, yaw = self.rpy(q_b)
+        x, xdot, xddot, body_orientation = self.x, self.xdot, self.xddot, self.q_b
+        roll, pitch, yaw = self.rpy(body_orientation)
         g_vec = np.array([0.0, 0.0, -9.81])
         unit_z = np.array([0.0, 0.0, 1.0])
 
+        x_d = self.x_d
         # Position controller
         self.px_pid.setpoint = x_d[0]
         self.py_pid.setpoint = x_d[1]
@@ -148,7 +147,7 @@ class PIDCascadeV1(ControllerBase):
         a_d[1] = self.vy_pid(xdot[1])
         a_d[2] = self.vz_pid(xdot[2])
 
-        a_db = self.world_to_body(q_b, a_d - g_vec)
+        a_db = self.world_to_body(body_orientation, a_d - g_vec)
 
         # Find desired attitude correction using shortest arc algorithm
         q_theta = math_utils.shortest_arc(unit_z, a_db)
@@ -178,7 +177,7 @@ class PIDCascadeV1(ControllerBase):
         elapsed = time.time()
         rate = rospy.Rate(5000)
         while not rospy.is_shutdown():
-            self.pid(self.x, (self.x, self.xdot, self.xddot, self.q_b))
+            self.pid()
             i +=1
             if i % 1000 == 0:
                 print(int(math.floor(1/(time.time()-elapsed)*1000)))
