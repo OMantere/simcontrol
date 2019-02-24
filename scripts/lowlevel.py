@@ -82,7 +82,7 @@ class PIDCascadeV1(ControllerBase):
         self.xddot = np.array([msg.linear_acceleration.x,
             msg.linear_acceleration.y,
             msg.linear_acceleration.z])
-        self.q_b = np.quaternion(orientation.w, orientation.x, orientation.w, orientation.z)
+        self.q_b = np.quaternion(orientation.w, orientation.x, orientation.y, orientation.z)
 
     def _target_callback(self, msg):
         orientation = msg.orientation
