@@ -17,6 +17,7 @@ from sensor_msgs.msg import Imu
 from geometry_msgs.msg import Vector3, Quaternion, Pose
 from flightgoggles.msg import IRMarkerArray, IRMarker
 from lib.graphix import camera_ray, ray_p_dist
+from simcontrol.msg import State
 
 GRAVITY = 9.81
 
@@ -32,6 +33,7 @@ class FlightgogglesController(object):
         self.rate_thrust_publisher = rospy.Publisher('/uav/input/rateThrust', RateThrust, queue_size=1)
         self.ir_beacons = rospy.Subscriber('/uav/camera/left/ir_beacons', IRMarkerArray, self._ir_callback)
         self.target_pub = rospy.Publisher('/simcontrol/target_pose', Pose, queue_size=1)
+        self.state_pub = rospy.Publisher('/simcontrol/state_estimate', State, queue_size=1)
 
         self.imu_topic = '/uav/sensors/imu'
         self.imu_subscriber = rospy.Subscriber(self.imu_topic, Imu, self._imu_callback)
@@ -156,10 +158,18 @@ class FlightgogglesController(object):
             rate.sleep()
 
     def _set_target(self, target_vector, state_estimate):
-        target_pose = Pose()
         x, xdot, xddot, q = state_estimate
+        current_state = State()
+        current_state.header.stamp = rospy.Time.now()
+        current_state.header.frame_id = 'state_estimate'
+        current_state.pose.position = Vector3(x[0], x[1], x[2])
+        current_state.pose.orientation = Quaternion(q.x, q.y, q.z, q.w)
+        current_state.linear_velocity = Vector3(xdot[0], xdot[1], xdot[2])
+        current_state.linear_acceleration = Vector3(xddot[0], xddot[1], xddot[2])
+        self.state_pub.publish(current_state)
+
+        target_pose = Pose()
         target_pose.position = Vector3(target_vector[0], target_vector[1], target_vector[2])
-        target_pose.orientation = Quaternion(q.x, q.y, q.z, q.w)
         self.target_pub.publish(target_pose)
 
     def reference_target_vector(self, x):

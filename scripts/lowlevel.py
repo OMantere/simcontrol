@@ -65,35 +65,34 @@ class PIDCascadeV1(ControllerBase):
         self.q_b = np.quaternion(1.0, 0.0, 0.0, 0.0)
 
         self.x_d = np.float32([0,0,0])
-        self.yaw_d = 0.0
 
-        self.armed = False
         self.takeoff = False
 
-        self.state_sub = rospy.Subscriber('/simcontrol/state_estimate', State, self.state_subscriber, queue_size=1)
-        self.x_d_sub = rospy.Subscriber('/simcontrol/target_pose', Pose, self.target_subscriber, queue_size=1)
-        self.takeoff_sub = rospy.Subscriber('/simcontrol/takeoff', Bool, self.takeoff_subscriber, queue_size=1)
+        self.state_sub = rospy.Subscriber('/simcontrol/state_estimate', State, self._state_callback, queue_size=1)
+        self.x_d_sub = rospy.Subscriber('/simcontrol/target_pose', Pose, self._target_callback, queue_size=1)
+        self.takeoff_sub = rospy.Subscriber('/simcontrol/takeoff', Bool, self._takeoff_callback, queue_size=1)
         self.rate_thrust_publisher = rospy.Publisher('/uav/input/rateThrust', RateThrust, queue_size=1)
 
-    def state_subscriber(self, msg):
-        p = msg.pose.position
-        q = msg.pose.orientation
-        v = msg.linear_velocity
-        self.x = p
-        self.xdot = np.array([msg.linear_velocity.x,
-            msg.linear_velocity.y,
-            msg.linear_velocity.z])
+    def _state_callback(self, msg):
+        position = msg.pose.position
+        orientation = msg.pose.orientation
+        velocity = msg.linear_velocity
+        self.x = np.array([position.x, position.y, position.z])
+        self.xdot = np.array([velocity.x, velocity.y, velocity.z])
+        self.xddot = np.array([msg.linear_acceleration.x,
+            msg.linear_acceleration.y,
+            msg.linear_acceleration.z])
+        self.q_b = np.quaternion(orientation.w, orientation.x, orientation.w, orientation.z)
 
-    def target_subscriber(self, msg):
-        q = msg.orientation
-        q_d = np.quaternion(q.w, q.x, q.y, q.z)
-        p = msg.position
-        self.x_d = np.float32([p.x, p.y, p.z])
-        _, _, self.yaw_d = self.rpy(q)
-        self.q_b = q_d
+    def _target_callback(self, msg):
+        orientation = msg.orientation
+        q_d = np.quaternion(orientation.w, orientation.x, orientation.y, orientation.z)
+        position = msg.position
+        self.x_d = np.float32([position.x, position.y, position.z])
 
-    def takeoff_subscriber(self, msg):
-        self.takeoff = msg.data
+    def _takeoff_callback(self, msg):
+        self.command(9.81 * 1.1, np.array([0.0, 0.0, 0.0]))  # c > 1.1 * m * g to arm
+        self.takeoff = True
 
     def rpy(self, q):
         w, x, y, z = q.w, q.x, q.y, q.z
@@ -114,19 +113,17 @@ class PIDCascadeV1(ControllerBase):
         yaw = np.arctan2(t3, t4)
         return roll, pitch, yaw
 
-    def w2b(self, q_b, a_d):
+    def world_to_body(self, q_b, a_d):
         qr = np.quaternion(0.0, a_d[0], a_d[1], a_d[2])
         qr = q_b.conjugate() * qr * q_b
         return np.array([qr.x, qr.y, qr.z])
 
-    def pid1(self, x_d, estimate):
+    def pid(self, x_d, estimate):
         """x_d is relative target position"""
+        if not self.takeoff:
+            return
         if not estimate:
             print("PID controller: Failed to get state estimate, skipping frame")
-            return
-        if not self.armed:
-            if self.takeoff:
-                self.command(9.81 * 1.1, np.array([0.0, 0.0, 0.0]))  # c > 1.1 * m * g to arm
             return
         x, xdot, xddot, q_b = estimate
         roll, pitch, yaw = self.rpy(q_b)
@@ -151,13 +148,11 @@ class PIDCascadeV1(ControllerBase):
         a_d[1] = self.vy_pid(xdot[1])
         a_d[2] = self.vz_pid(xdot[2])
 
-        # World to body transform
-        a_db = self.w2b(q_b, a_d - g_vec)
+        a_db = self.world_to_body(q_b, a_d - g_vec)
 
         # Find desired attitude correction using shortest arc algorithm
         q_theta = math_utils.shortest_arc(unit_z, a_db)
-        roll_d, pitch_d, _ = self.rpy(q_theta)
-        yaw_d = self.yaw_d
+        roll_d, pitch_d, yaw_d = self.rpy(q_theta)
         yaw = yaw % (2*np.pi)
         yaw_d = yaw_d % (2*np.pi)
         yaw_diff = (yaw_d - yaw) % (2*np.pi)
@@ -181,13 +176,15 @@ class PIDCascadeV1(ControllerBase):
         rospy.init_node('drone_lowlevel', anonymous=True)
         i = 0
         elapsed = time.time()
-        self.armed = True
+        rate = rospy.Rate(5000)
         while not rospy.is_shutdown():
-            self.pid1(self.x, (self.x, self.xdot, self.xddot, self.q_b))
+            self.pid(self.x, (self.x, self.xdot, self.xddot, self.q_b))
             i +=1
             if i % 1000 == 0:
                 print(int(math.floor(1/(time.time()-elapsed)*1000)))
                 elapsed = time.time()
+
+            rate.sleep()
 
     def command(self, c, omega):
         omega_x = float(omega[0]) / self.max_omega
