@@ -26,9 +26,10 @@ class ControllerBase(object):
         self.max_omega = np.pi
 
 class PIDCascadeV1(ControllerBase):
-    def __init__(self):
+    def __init__(self, rate):
         ControllerBase.__init__(self)
-        self.sample_time = None   # We shouldn't limit ourselves
+        self.rate = rate
+        self.sample_time = 1.0 / rate
         pki = [1.0, 0.0, 0.0]
         pki2xy = [1.0, 0.0, 0.0]
         pki2z = [2.0, 0.0, 0.0]
@@ -183,16 +184,10 @@ class PIDCascadeV1(ControllerBase):
 
     def loop(self):
         rospy.init_node('drone_lowlevel', anonymous=True)
-        i = 0
-        elapsed = time.time()
-        rate = rospy.Rate(5000)
+        rate = rospy.Rate(self.rate)
         while not rospy.is_shutdown():
             self.pid()
-            i +=1
-            if i % 1000 == 0:
-                print(int(math.floor(1/(time.time()-elapsed)*1000)))
-                elapsed = time.time()
-
+            print("remaining: ", rate.remaining().nsecs)
             rate.sleep()
 
     def command(self, c, omega):
@@ -210,7 +205,7 @@ class PIDCascadeV1(ControllerBase):
 
 if __name__ == '__main__':
     try:
-        node = PIDCascadeV1()
+        node = PIDCascadeV1(5000)
         node.loop()
     except rospy.ROSInterruptException:
         pass
