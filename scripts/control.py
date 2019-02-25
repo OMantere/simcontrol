@@ -166,19 +166,15 @@ class FlightgogglesController(object):
                 pointing_direction = ir_ray
         return pointing_direction
 
-    def _yaw_quaternion(self, x):
-        # Returns a quaternion which represents only the orientation
-        # encoding only the desired yaw. The low level controller
-        # is free to set the other orientation parameters.
+    def _orientation_quaternion(self, x):
+        # The low level controller will use only the yaw angle.
+        # Returns the quaternion which will rotate the x-axis to
+        # point towards the next gate.
         gaze_direction = self._gaze_direction(x)
-        yaw_angle = np.arctan2(gaze_direction[1], gaze_direction[0])
-        rotation = np.sin(yaw_angle/2.)
-        q = np.cos(yaw_angle/2.) + (np.sin(yaw_angle/2.) * quaternion.z)
-        return q.normalized()
+        return math_utils.shortest_arc(np.array([1., 0., 0.]), gaze_direction)
 
     def _set_target(self, target_vector, state_estimate):
         x, xdot, xddot, q = state_estimate
-
 
         current_state = State()
         current_state.header.stamp = rospy.Time.now()
@@ -192,7 +188,7 @@ class FlightgogglesController(object):
         target_pose = Pose()
         target_pose.position = Vector3(target_vector[0], target_vector[1], target_vector[2])
 
-        q = self._yaw_quaternion(x)
+        q = self._orientation_quaternion(x)
         target_pose.orientation = Quaternion(q.x, q.y, q.z, q.w)
         self.target_pub.publish(target_pose)
 

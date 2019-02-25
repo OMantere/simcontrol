@@ -114,8 +114,14 @@ class PIDCascadeV1(ControllerBase):
         yaw = np.arctan2(t3, t4)
         return roll, pitch, yaw
 
-    def _desired_yaw(self):
-        return quaternion.as_euler_angles(self.q_d)[2]
+    def _compute_yaw_diff(self, current_yaw, desired_yaw):
+        """Returns the signed difference in yaw between the two angles."""
+        current_yaw = current_yaw % (2*np.pi)
+        desired_yaw = desired_yaw % (2*np.pi)
+        yaw_diff = (desired_yaw - current_yaw) % (2*np.pi)
+        if yaw_diff > np.pi:
+            yaw_diff -= 2*np.pi
+        return yaw_diff
 
     def world_to_body(self, q_b, a_d):
         qr = np.quaternion(0.0, a_d[0], a_d[1], a_d[2])
@@ -158,12 +164,14 @@ class PIDCascadeV1(ControllerBase):
         # Find desired attitude correction using shortest arc algorithm
         q_theta = math_utils.shortest_arc(unit_z, a_db)
         roll_d, pitch_d, _ = self.rpy(q_theta)
-        yaw_d = self._desired_yaw()
+        _, _, yaw_d = self.rpy(self.q_d)
+
+        yaw_diff = self._compute_yaw_diff(yaw, yaw_d)
 
         # Apply attitude corrections using attitude PID
         self.thetax_pid.setpoint = roll_d
         self.thetay_pid.setpoint = pitch_d
-        self.thetaz_pid.setpoint = yaw_d
+        self.thetaz_pid.setpoint = yaw_diff
         omega_d = np.array([0.0, 0.0, 0.0])
         omega_d[0] = self.thetax_pid(0.0) # 0 because a correction quantity is being tracked
         omega_d[1] = self.thetay_pid(0.0)
