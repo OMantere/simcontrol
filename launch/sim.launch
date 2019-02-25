@@ -29,7 +29,6 @@
   <param name="/use_sim_time" value="false" />
 
   <!-- <node pkg="simcontrol" name="publish_state" type="state_estimation.py" output="screen" /> -->
-  <param name="/use_ir_markers" value="$(arg use_ir_markers)" />
 
   <rosparam command="load" file="$(find simcontrol)/config/basic.yaml"/>
 
