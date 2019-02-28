@@ -10,7 +10,7 @@ from math import *
 from collections import defaultdict
 import numpy as np
 import quaternion
-import math_utils
+from lib import math_utils
 from simple_pid import PID
 from mav_msgs.msg import RateThrust
 from sensor_msgs.msg import Imu
@@ -35,16 +35,10 @@ class FlightgogglesController(object):
         self.target_pub = rospy.Publisher('/simcontrol/target_pose', Pose, queue_size=1)
         self.state_pub = rospy.Publisher('/simcontrol/state_estimate', State, queue_size=1)
 
-        self.imu_topic = '/uav/sensors/imu'
-        self.imu_subscriber = rospy.Subscriber(self.imu_topic, Imu, self._imu_callback)
         self.tf_listener = tf.TransformListener()
         self.tf_prev_x = self.init_position
         self.tf_prev_xdot = np.array([0.0, 0.0, 0.0])
         self.tf_prev_xddot = np.array([0.0, 0.0, 0.0])
-        self.imu_latest_x = self.init_position
-        self.imu_latest_xdot = np.array([0.0, 0.0, 0.0])
-        self.imu_latest_xddot = np.array([0.0, 0.0, 0.0])
-        self.imu_latest_omega = np.array([0.0, 0.0, 0.0])
         self.is_armed = False
 
         self.gate_names = rospy.get_param("/gate_names") if rospy.has_param('/gate_names') else None
@@ -86,9 +80,6 @@ class FlightgogglesController(object):
     def get_gate_info(self):
         for gate in range(1, 24):
             nominal_location = np.float32(rospy.get_param('/uav/Gate%d/nominal_location' % gate))
-            self.gate_markers['Gate%d' % gate] = {}
-            for i in range(1, 5):
-                self.gate_markers['Gate%d' % gate][i] = nominal_location[i-1,:]
             self.gate_normal['Gate%d' % gate] = -np.cross(nominal_location[1,:] - nominal_location[0,:], nominal_location[2,:] - nominal_location[0,:])
             self.gate_normal['Gate%d' % gate] /= np.linalg.norm(self.gate_normal['Gate%d' % gate])
             perturbation_bound = np.float32(rospy.get_param('/uav/Gate%d/perturbation_bound' % gate))
@@ -176,14 +167,14 @@ class FlightgogglesController(object):
     def _set_target(self, target_vector, state_estimate):
         x, xdot, xddot, q = state_estimate
 
-        current_state = State()
-        current_state.header.stamp = rospy.Time.now()
-        current_state.header.frame_id = 'state_estimate'
-        current_state.pose.position = Vector3(x[0], x[1], x[2])
-        current_state.pose.orientation = Quaternion(q.x, q.y, q.z, q.w)
-        current_state.linear_velocity = Vector3(xdot[0], xdot[1], xdot[2])
-        current_state.linear_acceleration = Vector3(xddot[0], xddot[1], xddot[2])
-        self.state_pub.publish(current_state)
+        #current_state = State()
+        #current_state.header.stamp = rospy.Time.now()
+        #current_state.header.frame_id = 'state_estimate'
+        #current_state.pose.position = Vector3(x[0], x[1], x[2])
+        #current_state.pose.orientation = Quaternion(q.x, q.y, q.z, q.w)
+        #current_state.linear_velocity = Vector3(xdot[0], xdot[1], xdot[2])
+        #current_state.linear_acceleration = Vector3(xddot[0], xddot[1], xddot[2])
+        #self.state_pub.publish(current_state)
 
         target_pose = Pose()
         target_pose.position = Vector3(target_vector[0], target_vector[1], target_vector[2])
@@ -234,17 +225,6 @@ class FlightgogglesController(object):
         self.latest_markers_time = msg.header.stamp
         for marker in msg.markers:
             self.latest_markers[marker.landmarkID.data][marker.markerID.data] = np.array([marker.x, marker.y])
-
-    def _imu_callback(self, msg):
-        omega = np.array([msg.angular_velocity.x, msg.angular_velocity.y, msg.angular_velocity.z])
-        omegabar = (omega + self.imu_latest_omega) / 2
-        xddot = np.array([msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z])
-        xdot = self.imu_latest_xdot + (xddot + self.imu_latest_xddot) / 2 * self.sample_time  # Integrate from xddot
-        x = self.imu_latest_x + (xdot + self.imu_latest_xdot) / 2 * self.sample_time  # Integrate from xdot
-        self.imu_latest_x = x
-        self.imu_latest_xdot = xdot
-        self.imu_latest_xddot = xddot
-        self.imu_latest_omega = omega
 
     def state_estimate(self, timestamp=None):
         if self.use_gt_state:

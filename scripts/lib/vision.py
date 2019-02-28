@@ -1,6 +1,7 @@
 import numpy as np
 import quaternion
 import cv2
+from math_utils import q_rot, identity_quaternion
 
 w = 1028
 h = 768
@@ -12,8 +13,6 @@ cx = w / 2.0
 cy = h / 2.0
 camera_matrix = np.float32([[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]])
 
-def identity_quaternion():
-    return np.quaternion(1.0, 0.0, 0.0, 0.0)
 
 def polynomial_correction(x):
     """Apply a 2nd order lens distortion correction to screen space point x"""
@@ -22,12 +21,6 @@ def polynomial_correction(x):
     xcorr1 = k[0][0] * x[0]**2 + k[0][1] * x[0] + k[0][2]
     xcorr2 = k[1][0] * x[1]**2 + k[1][1] * x[1] + k[1][2]
     return np.float32([xcorr1, xcorr2])
-
-def q_rot(q, r):
-    """Rotate vector r by rotation described by quaternion q"""
-    qr = np.quaternion(0.0, r[0], r[1], r[2])
-    qr = q * qr * q.conjugate()
-    return np.array([qr.x, qr.y, qr.z])
 
 def stereo_correction(q, o, side='left'):
     """Perform origin correction because stereo cameras are spaced out"""
@@ -88,19 +81,6 @@ def cv_q_inv_trans(q):
     """Transform orientation from OpenCV convention to our representation"""
     return np.quaternion(q.w, q.z, -q.x, -q.y)
 
-def axis_angle(q):
-    """Compute axis-angle representation from quaternion"""
-    n = np.float32([q.x, q.y, q.z])
-    n_norm = np.linalg.norm(n)
-    return n/n_norm, 2 * np.arctan2(n_norm, q.w)
-
-def axis_angle_inv(axis, angle):
-    """Compute quaternion from axis-angle representation"""
-    x = axis[0] * np.sin(angle/2)
-    y = axis[1] * np.sin(angle/2)
-    z = axis[2] * np.sin(angle/2)
-    return np.quaternion(np.cos(angle/2), x, y, z)
-
 def q2rvec(q):
     """Compute OpenCV Rodrigues rotation vector from our quaternion"""
     return to_rvec(cv_q_trans(q))
@@ -117,8 +97,8 @@ def solve_pnp(object_points, image_points, position_guess=np.float32([0,0,0]), o
     :param image_points: array-like, shape=(n, 3), screen space points corresponding to object points
     :return tuple, (bool, numpy.float32, numpy.quaternion), (Whether a solution was found, solved position, solved orientation)
     """
-    cv_object_points = np.apply_along_axis(cv_point_trans, axis=1, object_points)
-    image_points = np.apply_along_axis(pixel_space, axis=1, image_points)
+    cv_object_points = np.apply_along_axis(cv_point_trans, 1, object_points)
+    image_points = np.apply_along_axis(pixel_space, 1, image_points)
     rvec = q2rvec(q[0])
     tvec = cv_point_trans(q_rot(q[0].conjugate(), -pos[0]))
     success, rvec, tvec = cv2.solvePnP(cv_object_points, np.float32(image_points), camera_matrix, rvec=rvec, tvec=tvec, useExtrinsicGuess=True, distCoeffs=None, flags=0)

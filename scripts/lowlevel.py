@@ -14,11 +14,11 @@ from simple_pid import PID
 from mav_msgs.msg import RateThrust
 from sensor_msgs.msg import Imu
 from flightgoggles.msg import IRMarkerArray, IRMarker
-from lib.graphix import camera_ray, ray_p_dist
+from lib.vision import camera_ray, ray_p_dist
 from simcontrol.msg import State
 from geometry_msgs.msg import Pose
 from std_msgs.msg import Bool
-import math_utils
+from lib import math_utils
 
 class ControllerBase(object):
     def __init__(self):
@@ -30,17 +30,18 @@ class PIDCascadeV1(ControllerBase):
         ControllerBase.__init__(self)
         self.rate = rate
         self.sample_time = 1.0 / rate
+        self.max_omega = 5*np.pi
         pki = [1.0, 0.0, 0.0]
         pki2xy = [1.0, 0.0, 0.0]
-        pki2z = [2.0, 0.0, 0.0]
+        pki2z = [5.0, 0.0, 0.0]
         pki3 = [50.0, 0.0, 0.0]
-        pki3z = [2.0, 0.0, 0.0]
-        vz_lim = (-6.0, 6.0)
+        pki3z = [15.0, 0.0, 0.0]
+        vz_lim = (-1.0, 6.0)
         vxy_lim = (-15.0, 15.0)
         axy_lim = (-2.0, 2.0)
-        az_lim = (-4.0, 4.0)
-        omegaxy_lim = (-self.max_omega, self.max_omega)
-        omegaz_lim = (-self.max_omega, self.max_omega)
+        az_lim = (-1.0, 6.0)
+        omegaxy_lim = (-1e9, 1e9)
+        omegaz_lim = (-1e9, 1e9)
         self.px_pid = PID(*pki, sample_time=self.sample_time)
         self.py_pid = PID(*pki, sample_time=self.sample_time)
         self.pz_pid = PID(*pki, sample_time=self.sample_time)
@@ -60,13 +61,13 @@ class PIDCascadeV1(ControllerBase):
         self.thetay_pid.output_limits = omegaxy_lim
         self.thetaz_pid.output_limits = omegaz_lim
 
-        self.x = None
-        self.xdot = None
-        self.xddot = None
-        self.q_b = None
-
-        self.x_d = None
-        self.q_d = None
+        init_pose = rospy.get_param('/uav/flightgoggles_uav_dynamics/init_pose')
+        self.x = np.float32([init_pose[0], init_pose[1], init_pose[2]])
+        self.q_b = np.quaternion(init_pose[6], init_pose[3], init_pose[4], init_pose[5])
+        self.x_d = self.x
+        self.q_d = self.q_b
+        self.xdot = np.float32([0, 0, 0])
+        self.xddot = np.float32([0, 0, 0])
 
         self.takeoff = False
 
@@ -187,7 +188,6 @@ class PIDCascadeV1(ControllerBase):
         rate = rospy.Rate(self.rate)
         while not rospy.is_shutdown():
             self.pid()
-            print("remaining: ", rate.remaining().nsecs)
             rate.sleep()
 
     def command(self, c, omega):
