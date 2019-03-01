@@ -4,6 +4,8 @@
   <arg name="render_stereo" default="0" />
   <arg name="use_ir_markers" default="false" />
 
+  <rosparam command="load" file="$(find simcontrol)/config/gate_locations_no_perturbation.yaml"/>
+
   <group ns="/control_nodes">
     <!-- Start human teleoperation nodes -->
     <node name="joy" pkg="joy" type="joy_node"/>

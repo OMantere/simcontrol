@@ -2,6 +2,7 @@ import numpy as np
 import quaternion
 import cv2
 from math_utils import q_rot, identity_quaternion
+import time
 
 w = 1028
 h = 768
@@ -22,17 +23,23 @@ def polynomial_correction(x):
     xcorr2 = k[1][0] * x[1]**2 + k[1][1] * x[1] + k[1][2]
     return np.float32([xcorr1, xcorr2])
 
+def pixel_space(x):
+    """From screen space to pixel space"""
+    p1 = (x[0] + 1)*(w/2)
+    p2 = (x[1] + 1)*(h/2)
+    return np.float32([p1, p2])
+
 def stereo_correction(q, o, side='left'):
     """Perform origin correction because stereo cameras are spaced out"""
     y_trans = baseline/2 if side == 'left' else -baseline/2
     stereo_translation = q_rot(q, np.float32([0, y_trans, 0]))
     return o + stereo_translation
 
-def screen_space(x, y):
+def screen_space(x):
     """Transform from pixel space to screen space (x in [-1, 1], y in [-1, 1])"""
-    x = (x - w/2)/(w/2)
-    y = (y - h/2)/(h/2)
-    return np.float32([x, y])
+    y1 = (x[0] - w/2)/(w/2)
+    y2 = (x[1] - h/2)/(h/2)
+    return np.float32([y1, y2])
 
 def camera_proj(q, p):
     """Project point p in object space to camera screen space"""
@@ -43,9 +50,9 @@ def camera_proj(q, p):
     y = y/(fov/2/45.0)
     return np.float32([-x, -y])
 
-def camera_ray(x, y, q, corr=False):
+def camera_ray(x, q, corr=False):
     """Get the ray in object space which corresponds to pixel at (x, y)"""
-    x = screen_space(x, y)
+    x = screen_space(x)
     if corr:
         x = polynomial_correction(x)
     x, y = x[0], x[1]
@@ -89,7 +96,7 @@ def rvec2q(rvec):
     """Compute our quaternion to OpenCV Rodrigues rotation vector"""
     return cv_q_inv_trans(to_q(rvec))
 
-def solve_pnp(object_points, image_points, position_guess=np.float32([0,0,0]), orientation_guess=identity_quaternion()):
+def solve_pnp(object_points, image_points, pos=np.float32([0,0,0]), q=identity_quaternion()):
     """
     Solves the PnP problem for the given object-point image-point correspondences
 
@@ -97,14 +104,18 @@ def solve_pnp(object_points, image_points, position_guess=np.float32([0,0,0]), o
     :param image_points: array-like, shape=(n, 3), screen space points corresponding to object points
     :return tuple, (bool, numpy.float32, numpy.quaternion), (Whether a solution was found, solved position, solved orientation)
     """
+    t0 = time.time()
     cv_object_points = np.apply_along_axis(cv_point_trans, 1, object_points)
+    image_points = np.apply_along_axis(screen_space, 1, image_points)
+    image_points = np.apply_along_axis(polynomial_correction, 1, image_points)
     image_points = np.apply_along_axis(pixel_space, 1, image_points)
-    rvec = q2rvec(q[0])
-    tvec = cv_point_trans(q_rot(q[0].conjugate(), -pos[0]))
+    rvec = q2rvec(q)
+    tvec = cv_point_trans(q_rot(q.conjugate(), -pos))
     success, rvec, tvec = cv2.solvePnP(cv_object_points, np.float32(image_points), camera_matrix, rvec=rvec, tvec=tvec, useExtrinsicGuess=True, distCoeffs=None, flags=0)
     if not success:  # Did not converge
         return False, None, None
     else:
-        position_result = -q_rot(q_res, cv_point_inv_trans(tvec))
         orientation_result = rvec2q(rvec).conjugate()
+        position_result = -q_rot(orientation_result, cv_point_inv_trans(tvec))
+        #print('solve_pnp time:', (time.time() - t0) * 1000, 'ms')
         return True, position_result, orientation_result
