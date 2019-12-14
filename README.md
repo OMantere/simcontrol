@@ -1,9 +1,5 @@
-# To install ros node
+# AlphaPilot submission repository
 
-First install the rovio node and dependencies from https://github.com/ethz-asl/rovio.
+Partially working code for controlling a quadcopter around a track in the FlightGoggles simulator.
 
-While airsim is running, run using `roslaunch simcontrol vio.launch`.
-
-## IR Marker navigation
-
-IR marker navigation can be used with `roslaunch simcontrol ir_navigation.launch`. Defaults to the reference spline if target gate IR markers cannot be seen.
+![](fly.gif)
