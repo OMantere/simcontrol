@@ -13,7 +13,7 @@ from simple_pid import PID
 from mav_msgs.msg import RateThrust
 from sensor_msgs.msg import Imu
 from flightgoggles.msg import IRMarkerArray, IRMarker
-from lib.graphix import camera_ray
+from lib.vision import camera_ray
 from sensor_msgs.msg import Image
 
 

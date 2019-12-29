@@ -1,5 +1,4 @@
 numpy-quaternion==2019.2.20.16.38.5
 simple-pid==0.1.5
 numpy==1.16.0
-
-
+opencv-python==4.0.0.21
